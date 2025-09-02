@@ -5,15 +5,18 @@ from datetime import date, timedelta
 import calendar
 import mysql.connector
 import customtkinter as ctk
+import subprocess
+import os
+import sys
 
 # Set a default appearance mode to Light
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 class CalendarApp:
-    def __init__(self, root):
+    def __init__(self, root, user_id):
         self.root = root
-        self.root.title("My Events")
+        self.user_id = user_id # Store the authenticated user ID
         self.root.geometry("1200x700")
         self.root.minsize(1000, 600)
 
@@ -23,13 +26,11 @@ class CalendarApp:
         # --- Cool Icon text symbols with colors ---
         self.check_icon = "✓"
         self.delete_icon = "✕"
-        self.dark_mode_icon = "🌙"
-        self.light_mode_icon = "☀️"
+        self.ai_chat_icon = "🤖"
         self.today_icon = "📅"
         self.prev_icon = "◀"
         self.next_icon = "▶"
-        self.search_icon = "🔍"
-        self.ai_chat_icon = "🤖"
+        self.refresh_icon = "🔄"
 
         # Blue shade colors only
         self.icon_colors = {
@@ -37,31 +38,15 @@ class CalendarApp:
             "delete": "#1976D2",     # Medium blue
             "nav": "#42A5F5",        # Sky blue
             "today": "#000000",      # Primary blue
-            "search": "#64B5F6",     # Soft blue
             "ai_chat": "#3F51B5",    # Indigo blue
             "today_selected": "#008CFF",     # Very light blue for today
             "manual_selected": "#B6DCFC"     # Light blue for manual selection
         }
 
-        # --- Database Connection and Setup (MySQL) ---
-        try:
-            self.conn = mysql.connector.connect(
-                host="photostore.ct0go6um6tj0.ap-south-1.rds.amazonaws.com",
-                user="admin",
-                password="DBpicshot",
-                database="eventsreminder"
-            )
-            self.cursor = self.conn.cursor()
-            self.create_table()
-        except mysql.connector.Error as err:
-            messagebox.showerror("Database Error", f"Could not connect to MySQL database.\nError: {err}")
-            self.root.destroy()
-            return
-
+        # Initialize database connection
+        self.initialize_database()
+        
         # --- Variables to hold form data and state ---
-        self.event_title_var = ctk.StringVar()
-        self.event_desc_var = ctk.StringVar()
-        self.event_time_var = ctk.StringVar(value="00:00")
         self.event_date_var = ctk.StringVar(value=datetime.date.today().strftime("%d %b, %Y"))
         self.reminder_var = ctk.StringVar(value="No Reminder")
         self.search_var = ctk.StringVar()
@@ -70,7 +55,6 @@ class CalendarApp:
 
         self.selected_date_canvas_item = None
         self.calendar_widgets = {}
-        self.is_today_selected = False
 
         self.create_main_frames()
         self.create_left_panel()
@@ -79,22 +63,27 @@ class CalendarApp:
         self.draw_calendar(self.current_date)
         self.refresh_event_list()
         
-
-
-    def create_table(self):
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS events (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                date VARCHAR(255) NOT NULL,
-                time VARCHAR(50),
-                done BOOLEAN NOT NULL,
-                reminder_setting VARCHAR(50)
+    def initialize_database(self):
+        """Initialize or reinitialize database connection"""
+        try:
+            if hasattr(self, 'conn') and self.conn and self.conn.is_connected():
+                self.conn.close()
+                
+            self.conn = mysql.connector.connect(
+                host="photostore.ct0go6um6tj0.ap-south-1.rds.amazonaws.com",
+                user="admin",
+                password="DBpicshot",
+                database="eventsreminder",
+                use_pure=True # Add this line
             )
-        """)
-        self.conn.commit()
-
+            self.cursor = self.conn.cursor()
+            return True
+        except mysql.connector.Error as err:
+            messagebox.showerror("Database Error", f"Could not connect to MySQL database.\nError: {err}")
+            if hasattr(self, 'root') and self.root:
+                self.root.destroy()
+            return False
+        
     def create_main_frames(self):
         self.main_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         self.main_frame.pack(fill="both", expand=True, padx=24, pady=24)
@@ -179,7 +168,10 @@ class CalendarApp:
                                      corner_radius=8, border_width=1, fg_color="#f9fafb", border_color="#E5E7EB")
         self.date_entry.pack(side="left", fill="x", expand=True)
 
-        reminder_values = ["No Reminder", "15 minutes before", "30 minutes before", "1 hour before", "1 day before"]
+        reminder_values = [
+            "No Reminder", "5 minutes before", "10 minutes before", "15 minutes before",
+            "30 minutes before", "1 hour before", "2 hours before", "1 day before"
+        ]
         self.reminder_combo = ctk.CTkComboBox(new_event_frame, variable=self.reminder_var, values=reminder_values,
                                             corner_radius=8, border_width=1, fg_color="white", border_color="#E5E7EB",
                                             button_color="#3B82F6", button_hover_color="#2563EB")
@@ -197,6 +189,10 @@ class CalendarApp:
         header_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(header_frame, text="All Events", font=ctk.CTkFont(family="Helvetica", size=18, weight="bold")).grid(row=0, column=0, sticky="w")
+        
+        # Display the user ID for debugging
+        user_id_label = ctk.CTkLabel(header_frame, text=f"User ID: {self.user_id}", font=ctk.CTkFont(family="Helvetica", size=10), text_color="#888888")
+        user_id_label.grid(row=1, column=0, sticky="w")
 
         self.search_entry = ctk.CTkEntry(header_frame,
                                         placeholder_text="🔍 Search your events... (e.g., meeting, birthday)",
@@ -204,13 +200,21 @@ class CalendarApp:
                                         border_color="#E5E7EB", placeholder_text_color="#9CA3AF")
         self.search_entry.grid(row=0, column=1, sticky="ew", padx=(10, 5))
         self.search_entry.bind("<KeyRelease>", lambda e: self.refresh_event_list())
+        
+        # Refresh button
+        self.refresh_button = ctk.CTkButton(header_frame, text=self.refresh_icon, width=35, height=35,
+                                           command=self.refresh_page, fg_color="transparent",
+                                           hover_color="#E5E7EB", text_color=("#888888", "#DDDDDD"),
+                                           font=ctk.CTkFont(size=18))
+        self.refresh_button.grid(row=0, column=2, padx=(0, 0))
+
 
         # AI Chat button next to search
         self.ai_chat_button = ctk.CTkButton(header_frame, text=self.ai_chat_icon, width=35, height=35,
                                            command=self.open_ai_chat, fg_color="transparent",
-                                           hover_color="#E5E7EB", text_color=self.icon_colors["ai_chat"],
+                                           hover_color="#E5E7EB", text_color=(self.icon_colors["ai_chat"], self.icon_colors["ai_chat"]),
                                            font=ctk.CTkFont(size=18))
-        self.ai_chat_button.grid(row=0, column=2, padx=(0, 0))
+        self.ai_chat_button.grid(row=0, column=3, padx=(0, 0))
         
         event_list_container = ctk.CTkFrame(self.right_panel, fg_color="transparent")
         event_list_container.pack(fill="both", expand=True, padx=16, pady=(0, 16))
@@ -218,6 +222,26 @@ class CalendarApp:
         self.event_list_canvas = ctk.CTkScrollableFrame(event_list_container, fg_color="transparent")
         self.event_list_canvas.pack(fill="both", expand=True)
 
+    def refresh_page(self):
+        """Completely refresh the page by reinitializing database and redrawing everything"""
+        # Show loading indicator
+        self.refresh_button.configure(text="⏳", state="disabled")
+        self.root.update()
+        
+        # Reinitialize database connection
+        if not self.initialize_database():
+            self.refresh_button.configure(text=self.refresh_icon, state="normal")
+            return
+            
+        # Redraw calendar
+        self.draw_calendar(self.current_date)
+        
+        # Refresh event list
+        self.refresh_event_list()
+        
+        # Restore refresh button
+        self.refresh_button.configure(text=self.refresh_icon, state="normal")
+        messagebox.showinfo("Refreshed", "Page has been refreshed with the latest data from the database.")
 
     def go_to_today(self):
         self.current_date = datetime.date.today()
@@ -277,9 +301,6 @@ class CalendarApp:
                 date_canvas.itemconfig(oval_id, fill=today_color, outline=today_color)
                 date_canvas.itemconfig(text_id, fill="white")
                 self.selected_date_canvas_item = date_canvas
-                self.is_today_selected = True
-            else:
-                self.is_today_selected = False
             
             date_canvas.bind("<Enter>", lambda e, d=day: self.on_date_hover(e, d, True))
             date_canvas.bind("<Leave>", lambda e, d=day: self.on_date_hover(e, d, False))
@@ -390,13 +411,28 @@ class CalendarApp:
         self.refresh_event_list()
 
     def refresh_event_list(self):
+        # Clear the current event list
         for widget in self.event_list_canvas.winfo_children():
             widget.destroy()
 
         search_text = self.search_entry.get().lower().strip()
 
-        self.cursor.execute("SELECT id, date, time, title, description, done, reminder_setting FROM events ORDER BY STR_TO_DATE(date, '%d %b, %Y') ASC, time ASC")
-        all_events = self.cursor.fetchall()
+        # Check database connection
+        try:
+            if not self.conn.is_connected():
+                if not self.initialize_database():
+                    return
+        except:
+            if not self.initialize_database():
+                return
+
+        # Modified query to filter by user_id
+        try:
+            self.cursor.execute("SELECT id, date, time, title, description, done, reminder_setting FROM events WHERE user_id = %s ORDER BY STR_TO_DATE(date, '%Y-%m-%d') ASC, time ASC", (self.user_id,))
+            all_events = self.cursor.fetchall()
+        except mysql.connector.Error as err:
+            messagebox.showerror("Database Error", f"Failed to fetch events.\nError: {err}")
+            return
         
         filtered_events = []
         for event_data in all_events:
@@ -415,11 +451,19 @@ class CalendarApp:
                          text_color=("#9CA3AF", "#6B7280")).pack()
         else:
             for event_data in filtered_events:
-                event_id, date_str, time_str, title_str, desc_str, done_int, reminder_str = event_data
+                event_id, date_str_db, time_str, title_str, desc_str, done_int, reminder_str = event_data
+                
+                # Convert date from YYYY-MM-DD to DD Mon, YYYY for display
+                try:
+                    display_date_obj = datetime.datetime.strptime(date_str_db, '%Y-%m-%d').date()
+                    display_date_str = display_date_obj.strftime('%d %b, %Y')
+                except ValueError:
+                    display_date_str = date_str_db # Fallback if format is unexpected
+
                 self.add_event_to_list(
                     event_id=event_id,
                     event_data={
-                        "date": date_str,
+                        "date": display_date_str,
                         "time": time_str,
                         "title": title_str,
                         "description": desc_str,
@@ -430,14 +474,28 @@ class CalendarApp:
         self.update_calendar_highlights()
 
     def update_calendar_highlights(self):
-        self.cursor.execute("SELECT date, done FROM events")
-        all_event_dates = self.cursor.fetchall()
+        # Check database connection
+        try:
+            if not self.conn.is_connected():
+                if not self.initialize_database():
+                    return
+        except:
+            if not self.initialize_database():
+                return
+
+        # Modified query to filter by user_id
+        try:
+            self.cursor.execute("SELECT date, done FROM events WHERE user_id = %s", (self.user_id,))
+            all_event_dates = self.cursor.fetchall()
+        except mysql.connector.Error as err:
+            messagebox.showerror("Database Error", f"Failed to fetch event dates.\nError: {err}")
+            return
         
         event_dates_in_month = set()
         done_dates_in_month = set()
-        for date_str, done_status in all_event_dates:
+        for date_str_db, done_status in all_event_dates:
             try:
-                event_date_obj = datetime.datetime.strptime(date_str, "%d %b, %Y").date()
+                event_date_obj = datetime.datetime.strptime(date_str_db, '%Y-%m-%d').date()
                 if event_date_obj.month == self.current_date.month and event_date_obj.year == self.current_date.year:
                     event_dates_in_month.add(event_date_obj.day)
                     if done_status:
@@ -539,78 +597,163 @@ class CalendarApp:
             messagebox.showwarning("Incomplete Fields", "Please enter a time for your event.")
             self.time_entry.focus()
             return
+        
+        # New time validation and formatting
+        try:
+            # Clean and parse the time string
+            time_cleaned = time.strip().replace(' ', '')
+            if 'am' in time_cleaned.lower() or 'pm' in time_cleaned.lower():
+                dt_obj = datetime.datetime.strptime(time_cleaned, '%I:%M%p')
+            else:
+                dt_obj = datetime.datetime.strptime(time_cleaned, '%H:%M')
+            time_str_db = dt_obj.strftime('%H:%M')
+        except ValueError:
+            messagebox.showerror("Invalid Time", "Please enter the time in a valid format (e.g., '14:30', '2:30 PM', '05:50').")
+            return
+
 
         if not date_str:
             messagebox.showwarning("Incomplete Fields", "Please select a date from the calendar.")
             return
 
-        sql = "INSERT INTO events (title, description, date, time, done, reminder_setting) VALUES (%s, %s, %s, %s, %s, %s)"
-        val = (title, description, date_str, time, False, reminder_setting)
+        # Convert date from DD Mon, YYYY to YYYY-MM-DD for saving to DB
+        try:
+            date_obj = datetime.datetime.strptime(date_str, '%d %b, %Y').date()
+            date_str_db = date_obj.strftime('%Y-%m-%d')
+        except ValueError:
+            messagebox.showerror("Invalid Date Format", "The selected date has an invalid format.")
+            return
+        
+        # Calculate reminder time and date if a reminder is set
+        reminder_time = self.calculate_reminder_time(date_str_db, time_str_db, reminder_setting)
+
+        sql = "INSERT INTO events (user_id, title, description, date, time, done, reminder_setting, reminder_datetime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
+        val = (self.user_id, title, description, date_str_db, time_str_db, False, reminder_setting, reminder_time)
 
         try:
             self.cursor.execute(sql, val)
             self.conn.commit()
-
             self.refresh_event_list()
-
-            # Clear the form
+            
             self.title_entry.delete(0, 'end')
             self.desc_entry.delete(0, 'end')
             self.time_entry.delete(0, 'end')
             self.reminder_var.set("No Reminder")
             self.title_entry.focus()
-
             messagebox.showinfo("Success", "Event created successfully!")
 
         except mysql.connector.Error as err:
             messagebox.showerror("Error", f"Failed to create event: {err}")
+    
+    def calculate_reminder_time(self, event_date, event_time, reminder_setting):
+        """Calculates the exact time of the reminder based on the event details."""
+        if reminder_setting == "No Reminder":
+            return None
+
+        # Combine date and time to a single datetime object
+        event_datetime_str = f"{event_date} {event_time}"
+        try:
+            event_datetime = datetime.datetime.strptime(event_datetime_str, '%Y-%m-%d %H:%M')
+        except ValueError:
+            return None # Return None if time format is invalid
+
+        # Calculate timedelta based on reminder setting
+        reminder_delta = datetime.timedelta()
+        if "minutes" in reminder_setting:
+            minutes = int(reminder_setting.split()[0])
+            reminder_delta = datetime.timedelta(minutes=minutes)
+        elif "hour" in reminder_setting:
+            hours = int(reminder_setting.split()[0])
+            reminder_delta = datetime.timedelta(hours=hours)
+        elif "day" in reminder_setting:
+            days = int(reminder_setting.split()[0])
+            reminder_delta = datetime.timedelta(days=days)
+        
+        reminder_datetime = event_datetime - reminder_delta
+        
+        return reminder_datetime
 
     def open_ai_chat(self):
-        """Open AI assistant application"""
+        """Open AI assistant application, passing user_id as argument"""
         try:
-            import subprocess
-            import os
-
-            # Get the directory where the current script is located
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            ai_assistant_path = os.path.join(current_dir, "ai_assistant.py")
-
-            # Check if ai_assistant.py exists
-            if os.path.exists(ai_assistant_path):
-                # Launch ai_assistant.py in a new process
-                subprocess.Popen(["python", ai_assistant_path])
+            # Check if running in a packaged app
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
             else:
-                messagebox.showerror("File Not Found", f"ai_assistant.py not found in:\n{current_dir}\n\nPlease make sure the AI assistant file exists in the same directory.")
+                base_path = os.path.dirname(os.path.abspath(__file__))
+            
+            ai_assistant_path = os.path.join(base_path, "ai_assistant.py")
+
+            if os.path.exists(ai_assistant_path):
+                # Launch ai_assistant.py with the user_id as a command-line argument
+                p = subprocess.Popen(["python", ai_assistant_path, self.user_id])
+                # Poll the process to check if it's still running
+                self.check_ai_process(p)
+            else:
+                messagebox.showerror("File Not Found", f"ai_assistant.py not found in:\n{base_path}\n\nPlease make sure the AI assistant file exists in the same directory.")
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open AI assistant:\n{str(e)}")
 
+    def check_ai_process(self, p):
+        """Checks if the AI Assistant process is still running."""
+        if p.poll() is None:
+            # Process is still running, check again in 500ms
+            self.root.after(500, lambda: self.check_ai_process(p))
+        else:
+            # Process has terminated, now refresh the event list
+            self.refresh_event_list()
+
+
     def mark_event_done(self, event_id):
-        self.cursor.execute("SELECT done FROM events WHERE id = %s", (event_id,))
-        current_status = self.cursor.fetchone()[0]
-        new_status = not current_status
-        
-        sql = "UPDATE events SET done = %s WHERE id = %s"
-        val = (new_status, event_id)
-        self.cursor.execute(sql, val)
-        self.conn.commit()
+        # Check database connection
+        try:
+            if not self.conn.is_connected():
+                if not self.initialize_database():
+                    return
+        except:
+            if not self.initialize_database():
+                return
+
+        # Modified query to filter by user_id
+        try:
+            self.cursor.execute("SELECT done FROM events WHERE id = %s AND user_id = %s", (event_id, self.user_id))
+            current_status = self.cursor.fetchone()[0]
+            new_status = not current_status
+            
+            sql = "UPDATE events SET done = %s WHERE id = %s AND user_id = %s"
+            val = (new_status, event_id, self.user_id)
+            self.cursor.execute(sql, val)
+            self.conn.commit()
+        except mysql.connector.Error as err:
+            messagebox.showerror("Database Error", f"Failed to update event status.\nError: {err}")
+            return
         
         self.refresh_event_list()
 
     def delete_event(self, event_id):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this event?"):
-            sql = "DELETE FROM events WHERE id = %s"
-            self.cursor.execute(sql, (event_id,))
-            self.conn.commit()
+            # Check database connection
+            try:
+                if not self.conn.is_connected():
+                    if not self.initialize_database():
+                        return
+            except:
+                if not self.initialize_database():
+                    return
+
+            # Modified query to filter by user_id
+            try:
+                sql = "DELETE FROM events WHERE id = %s AND user_id = %s"
+                self.cursor.execute(sql, (event_id, self.user_id))
+                self.conn.commit()
+            except mysql.connector.Error as err:
+                messagebox.showerror("Database Error", f"Failed to delete event.\nError: {err}")
+                return
+                
             self.refresh_event_list()
 
     def on_closing(self):
         if hasattr(self, 'conn') and self.conn and self.conn.is_connected():
             self.conn.close()
         self.root.destroy()
-
-if __name__ == "__main__":
-    root = ctk.CTk()
-    app = CalendarApp(root)
-    root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    root.mainloop()

@@ -1,16 +1,17 @@
 import customtkinter as ctk
-import cohere  # Import the Cohere SDK
+import cohere
 import json
 import datetime
 import uuid
-import mysql.connector  # Import MySQL connector
+import mysql.connector
+import sys
 
 # Set the appearance mode for customtkinter
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 # --- Configuration for Cohere API ---
-COHERE_API_KEY = "QHw20MxzRN9JU1VQUKdovICaOXPONYz86DXdUiqy"  # Replace with your Cohere API key
+COHERE_API_KEY = "QHw20MxzRN9JU1VQUKdovICaOXPONYz86DXdUiqy"
 co = cohere.ClientV2(COHERE_API_KEY)
 COHERE_MODEL = "command-a-03-2025"
 
@@ -22,42 +23,25 @@ DB_CONFIG = {
     "database": "eventsreminder"
 }
 
-
 # --- Helper functions for MySQL database operations ---
-def init_db():
-    """Initializes the MySQL database and creates the events table if it doesn't exist."""
+def get_db_connection():
+    """Establishes and returns a database connection."""
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS events (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                date VARCHAR(255) NOT NULL,
-                time VARCHAR(50),
-                done BOOLEAN NOT NULL,
-                reminder_setting VARCHAR(50),
-                user_id INT
-            )
-        """)
-        conn.commit()
+        return conn
     except mysql.connector.Error as err:
-        print(f"Error initializing database: {err}")
-    finally:
-        if 'conn' in locals() and conn.is_connected():
-            cursor.close()
-            conn.close()
+        print(f"Error connecting to MySQL database: {err}")
+        return None
 
-
-def save_event_to_db(user_id, title, description, date, time, reminder_setting="15 minutes before"):
-    """Saves a single event to the database."""
+def save_event_to_db(user_id, title, description, date, time, reminder_setting="15 minutes before", reminder_datetime=None):
+    """Saves a single event to the database for a specific user."""
+    conn = get_db_connection()
+    if not conn: return False
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO events (title, description, date, time, done, reminder_setting, user_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (title, description, date, time, False, reminder_setting, user_id)
+            "INSERT INTO events (user_id, title, description, date, time, done, reminder_setting, reminder_datetime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (user_id, title, description, date, time, False, reminder_setting, reminder_datetime)
         )
         conn.commit()
         return True
@@ -65,16 +49,16 @@ def save_event_to_db(user_id, title, description, date, time, reminder_setting="
         print(f"Error saving event to database: {err}")
         return False
     finally:
-        if 'conn' in locals() and conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
-
 
 def get_events_from_db(user_id):
     """Retrieves all events for a given user from the database."""
     events_data = []
+    conn = get_db_connection()
+    if not conn: return events_data
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
         cursor.execute("SELECT title, description, date, time, done, reminder_setting FROM events WHERE user_id = %s ORDER BY date, time", (user_id,))
         for row in cursor.fetchall():
@@ -89,17 +73,17 @@ def get_events_from_db(user_id):
     except mysql.connector.Error as err:
         print(f"Error retrieving events from database: {err}")
     finally:
-        if 'conn' in locals() and conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
     return events_data
 
-
 def get_events_by_date_range(user_id, start_date, end_date):
     """Retrieves events for a given user within a date range."""
     events_data = []
+    conn = get_db_connection()
+    if not conn: return events_data
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
         cursor.execute("""
             SELECT title, description, date, time, done, reminder_setting
@@ -119,17 +103,17 @@ def get_events_by_date_range(user_id, start_date, end_date):
     except mysql.connector.Error as err:
         print(f"Error retrieving events from database: {err}")
     finally:
-        if 'conn' in locals() and conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
     return events_data
 
-
 def search_events(user_id, search_term):
     """Search events by title or description."""
     events_data = []
+    conn = get_db_connection()
+    if not conn: return events_data
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor()
         search_pattern = f"%{search_term}%"
         cursor.execute("""
@@ -150,7 +134,7 @@ def search_events(user_id, search_term):
     except mysql.connector.Error as err:
         print(f"Error searching events in database: {err}")
     finally:
-        if 'conn' in locals() and conn.is_connected():
+        if conn and conn.is_connected():
             cursor.close()
             conn.close()
     return events_data
@@ -159,48 +143,34 @@ def search_events(user_id, search_term):
 class ChatApp(ctk.CTk):
     """AI Assistant chat application with Cohere backend and MySQL meeting scheduling."""
 
-    def __init__(self):
+    def __init__(self, user_id):
         super().__init__()
 
-        # Configure the main window
+        self.user_id = user_id
+        
         self.title("AI Assistant")
         self.geometry("1100x700")
         self.configure(fg_color="#f5f5f5")
 
-        # Generate a unique user ID for this session
-        self.user_id = str(uuid.uuid4())
-        print(f"Current User ID: {self.user_id}")
-
-        # Initialize the database
-        init_db()
-
-        # Chat history
         self.chat_history = []
-
-        # Layout
+        
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Sidebar
         self.create_sidebar()
 
-        # Main content
         self.main_frame = ctk.CTkFrame(self, fg_color="#f5f5f5", corner_radius=0)
         self.main_frame.grid(row=0, column=1, sticky="nsew")
         self.main_frame.grid_columnconfigure(0, weight=1)
         self.main_frame.grid_rowconfigure(1, weight=1)
 
-        # Header
         self.create_header(self.main_frame)
 
-        # Chat area
         self.create_chat_area(self.main_frame)
 
-        # Input area
         self.create_input_area(self.main_frame)
 
-        # Preloaded messages
         welcome_msg = ("Hi! I'm your AI Calendar Assistant. I can help you with:\n\n"
                       "• Creating single or multiple events at once\n"
                       "• Finding available time slots\n"
@@ -213,7 +183,6 @@ class ChatApp(ctk.CTk):
                       "📅 'meeting 6 pm, game 7 pm, match 7 am tomorrow'\n\n"
                       "What would you like to do today?")
         self.add_message("AI Assistant", welcome_msg, is_user=False)
-       
         self.after(100, self.scroll_to_bottom)
 
     def create_sidebar(self):
@@ -227,16 +196,9 @@ class ChatApp(ctk.CTk):
                                      text_color="#1a1a1a")
         sidebar_title.grid(row=0, column=0, padx=20, pady=20, sticky="n")
 
-        new_chat_button = ctk.CTkButton(sidebar_frame, text="New Chat",
-                                        fg_color="#f0f0f0", hover_color="#e0e0e0",
-                                        text_color="#1a1a1a", font=ctk.CTkFont(size=14))
-        new_chat_button.grid(row=1, column=0, padx=20, pady=(10, 5), sticky="ew")
-
-        events_button = ctk.CTkButton(sidebar_frame, text="Events",
-                                      fg_color="#f0f0f0", hover_color="#e0e0e0",
-                                      text_color="#1a1a1a", font=ctk.CTkFont(size=14),
-                                      command=self.show_events)
-        events_button.grid(row=2, column=0, padx=20, pady=5, sticky="ew")
+        # Display the user ID
+        user_id_label = ctk.CTkLabel(sidebar_frame, text=f"User ID: {self.user_id}", font=ctk.CTkFont(size=10), text_color="#888888")
+        user_id_label.grid(row=1, column=0, padx=20, pady=5)
 
     def create_header(self, parent_frame):
         header_frame = ctk.CTkFrame(parent_frame, height=70, corner_radius=0, fg_color="white")
@@ -346,7 +308,6 @@ class ChatApp(ctk.CTk):
             self.after(100, lambda: self.get_ai_response(user_message))
 
     def get_ai_response(self, user_message):
-        # Handle specific queries first
         if self.handle_specific_queries(user_message):
             return
 
@@ -356,7 +317,7 @@ class ChatApp(ctk.CTk):
             self.chat_history.append({"role": "assistant", "content": ai_response_text})
             return
         today_date = datetime.date.today().strftime("%Y-%m-%d")
-        # Make the system prompt strict to only return JSON for meeting requests
+        
         current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
         system_prompt_for_parsing = (
@@ -391,43 +352,29 @@ class ChatApp(ctk.CTk):
                 temperature=0.1,
             )
 
-            # Correctly access the text content of the response object.
             ai_text_response = response.message.content[0].text
 
             parsed_meetings = []
             try:
-                # Enhanced JSON extraction and parsing logic
-                # First try to find array format [...]
                 json_start = ai_text_response.find('[')
                 json_end = ai_text_response.rfind(']')
                 if json_start != -1 and json_end != -1:
                     json_data = ai_text_response[json_start:json_end + 1]
                     parsed_data = json.loads(json_data)
-                    # If it's an array, use it directly
                     if isinstance(parsed_data, list):
                         parsed_meetings = parsed_data
                     else:
                         parsed_meetings = [parsed_data]
                 else:
-                    # Try to find object format {...}
                     json_start = ai_text_response.find('{')
                     json_end = ai_text_response.rfind('}')
                     if json_start != -1 and json_end != -1:
                         json_data = ai_text_response[json_start:json_end + 1]
                         parsed_data = json.loads(json_data)
-                        # Single object, wrap in array
                         parsed_meetings = [parsed_data]
 
-                # Debug: Print what we parsed
-                print(f"AI Response: {ai_text_response}")
-                print(f"Parsed meetings: {parsed_meetings}")
-
             except json.JSONDecodeError as e:
-                print(f"JSON parsing error: {e}")
-                print(f"AI Response was: {ai_text_response}")
-                # Fallback: Try to parse manually if JSON parsing fails
                 parsed_meetings = self.fallback_parse_events(user_message)
-                print(f"Fallback parsed: {parsed_meetings}")
 
             if parsed_meetings:
                 meetings_added_count = 0
@@ -437,7 +384,6 @@ class ChatApp(ctk.CTk):
                         time_str = meeting_data.get("time")
 
                         if date_str and time_str:
-                            # Handle relative dates
                             if date_str.lower() == 'tomorrow':
                                 tomorrow = datetime.date.today() + datetime.timedelta(days=1)
                                 date_str = tomorrow.strftime('%Y-%m-%d')
@@ -447,24 +393,30 @@ class ChatApp(ctk.CTk):
                             elif 'next week' in date_str.lower():
                                 next_week = datetime.date.today() + datetime.timedelta(days=7)
                                 date_str = next_week.strftime('%Y-%m-%d')
-
-                            # Validate date and time format
+                            
+                            # Validate and normalize time input
                             try:
-                                datetime.datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M')
+                                time_cleaned = time_str.strip().replace(' ', '')
+                                if 'am' in time_cleaned.lower() or 'pm' in time_cleaned.lower():
+                                    dt_obj = datetime.datetime.strptime(time_cleaned, '%I:%M%p')
+                                else:
+                                    dt_obj = datetime.datetime.strptime(time_cleaned, '%H:%M')
+                                time_str_db = dt_obj.strftime('%H:%M')
                             except ValueError:
-                                print(f"Invalid date/time format: {date_str} {time_str}")
-                                continue
+                                continue # Skip invalid time entries
 
-                            # Extract event details with proper handling
                             title = meeting_data.get("title") or meeting_data.get("description") or "New Event"
                             description_text = meeting_data.get("description", "")
                             reminder_setting = meeting_data.get("reminder_setting", "15 minutes before")
 
-                            # If title and description are the same, clear description to avoid duplication
                             if title == description_text:
                                 description_text = ""
+                            
+                            # Calculate reminder time
+                            reminder_datetime = self.calculate_reminder_time(date_str, time_str_db, reminder_setting)
 
-                            if save_event_to_db(self.user_id, title, description_text, date_str, time_str, reminder_setting):
+
+                            if save_event_to_db(self.user_id, title, description_text, date_str, time_str_db, reminder_setting, reminder_datetime):
                                 meetings_added_count += 1
                     except Exception as e:
                         print(f"Error parsing meeting: {e}")
@@ -483,10 +435,8 @@ class ChatApp(ctk.CTk):
         self.chat_history.append({"role": "assistant", "content": ai_response_text})
 
     def handle_specific_queries(self, user_message):
-        """Handle specific calendar queries without using Cohere API"""
         message_lower = user_message.lower()
 
-        # Today's events
         if any(phrase in message_lower for phrase in ['today', 'today\'s events', 'events today']):
             today = datetime.date.today().strftime("%Y-%m-%d")
             events = get_events_by_date_range(self.user_id, today, today)
@@ -505,7 +455,6 @@ class ChatApp(ctk.CTk):
             self.add_message("AI Assistant", response, is_user=False)
             return True
 
-        # This week's events
         elif any(phrase in message_lower for phrase in ['this week', 'week', 'weekly']):
             today = datetime.date.today()
             week_start = today - datetime.timedelta(days=today.weekday())
@@ -526,9 +475,7 @@ class ChatApp(ctk.CTk):
             self.add_message("AI Assistant", response, is_user=False)
             return True
 
-        # Search events
         elif any(phrase in message_lower for phrase in ['search', 'find', 'look for']):
-            # Extract search term (simple approach)
             search_terms = ['search for', 'find', 'look for', 'search']
             search_term = user_message
             for term in search_terms:
@@ -558,32 +505,26 @@ class ChatApp(ctk.CTk):
         return False
 
     def fallback_parse_events(self, user_message):
-        """Fallback method to parse events when JSON parsing fails"""
         events = []
         message_lower = user_message.lower()
-
-        # Simple pattern matching for common formats
-        # Pattern: "event_name time, event_name time"
         import re
 
-        # Look for patterns like "meeting 6 pm", "game 7 pm", etc.
         time_patterns = [
-            r'(\w+(?:\s+\w+)*)\s+(\d{1,2})\s*(am|pm)',  # "meeting 6 pm"
-            r'(\w+(?:\s+\w+)*)\s+(\d{1,2}):(\d{2})\s*(am|pm)',  # "meeting 6:30 pm"
-            r'(\w+(?:\s+\w+)*)\s+(\d{1,2}):(\d{2})',  # "meeting 18:30"
+            r'(\w+(?:\s+\w+)*)\s+(\d{1,2})\s*(am|pm)',
+            r'(\w+(?:\s+\w+)*)\s+(\d{1,2}):(\d{2})\s*(am|pm)',
+            r'(\w+(?:\s+\w+)*)\s+(\d{1,2}):(\d{2})',
         ]
 
         today = datetime.date.today()
         tomorrow = today + datetime.timedelta(days=1)
 
-        # Determine if it's for tomorrow
         use_tomorrow = 'tomorrow' in message_lower
         event_date = tomorrow.strftime('%Y-%m-%d') if use_tomorrow else today.strftime('%Y-%m-%d')
 
         for pattern in time_patterns:
             matches = re.findall(pattern, message_lower)
             for match in matches:
-                if len(match) == 3:  # am/pm format
+                if len(match) == 3:
                     title, hour, period = match
                     hour = int(hour)
                     if period == 'pm' and hour != 12:
@@ -591,7 +532,7 @@ class ChatApp(ctk.CTk):
                     elif period == 'am' and hour == 12:
                         hour = 0
                     time_str = f"{hour:02d}:00"
-                elif len(match) == 4:  # am/pm with minutes
+                elif len(match) == 4:
                     title, hour, minutes, period = match
                     hour = int(hour)
                     if period == 'pm' and hour != 12:
@@ -599,11 +540,10 @@ class ChatApp(ctk.CTk):
                     elif period == 'am' and hour == 12:
                         hour = 0
                     time_str = f"{hour:02d}:{minutes}"
-                else:  # 24-hour format
+                else:
                     title, hour, minutes = match
                     time_str = f"{hour}:{minutes}"
 
-                # Clean up title
                 title = title.strip().title()
 
                 events.append({
@@ -612,61 +552,43 @@ class ChatApp(ctk.CTk):
                     'date': event_date,
                     'time': time_str
                 })
-
         return events
 
-    def show_events(self):
-        events_window = ctk.CTkToplevel(self)
-        events_window.title("Your Events")
-        events_window.geometry("500x400")
-        events_window.grab_set()
+    def calculate_reminder_time(self, event_date, event_time, reminder_setting):
+        """Calculates the exact time of the reminder based on the event details."""
+        if reminder_setting == "No Reminder":
+            return None
 
-        events_window.grid_columnconfigure(0, weight=1)
-        events_window.grid_rowconfigure(0, weight=1)
+        # Combine date and time to a single datetime object
+        event_datetime_str = f"{event_date} {event_time}"
+        try:
+            event_datetime = datetime.datetime.strptime(event_datetime_str, '%Y-%m-%d %H:%M')
+        except ValueError:
+            return None # Return None if time format is invalid
 
-        scrollable_frame = ctk.CTkScrollableFrame(events_window, fg_color="#f5f5f5", corner_radius=0)
-        scrollable_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        scrollable_frame.grid_columnconfigure(0, weight=1)
-
-        user_events = get_events_from_db(self.user_id)
-
-        if user_events:
-            ctk.CTkLabel(scrollable_frame, text="Your Scheduled Events:",
-                         font=ctk.CTkFont(size=16, weight="bold")).grid(row=0, column=0, pady=(0, 10), sticky="w")
-
-            headers = ["Title", "Description", "Date", "Time", "Reminder", "Status"]
-            for i, header in enumerate(headers):
-                ctk.CTkLabel(scrollable_frame, text=header,
-                             font=ctk.CTkFont(size=12, weight="bold"),
-                             fg_color="#e0e0e0", corner_radius=5, padx=5, pady=3).grid(row=1, column=i, sticky="ew", padx=2, pady=2)
-
-            for i, event in enumerate(user_events):
-                row_num = i + 2
-                status = "✅ Done" if event.get("done") else "⏳ Pending"
-                description = event.get("description", "") or "No description"
-                reminder = event.get("reminder_setting", "15 minutes before")
-
-                ctk.CTkLabel(scrollable_frame, text=event.get("title", "N/A"),
-                             font=ctk.CTkFont(size=12), fg_color="#f0f0f0", corner_radius=5, padx=5, pady=3).grid(row=row_num, column=0, sticky="ew", padx=2, pady=2)
-                ctk.CTkLabel(scrollable_frame, text=description,
-                             font=ctk.CTkFont(size=12), fg_color="#f0f0f0", corner_radius=5, padx=5, pady=3).grid(row=row_num, column=1, sticky="ew", padx=2, pady=2)
-                ctk.CTkLabel(scrollable_frame, text=event.get("date", "N/A"),
-                             font=ctk.CTkFont(size=12), fg_color="#f0f0f0", corner_radius=5, padx=5, pady=3).grid(row=row_num, column=2, sticky="ew", padx=2, pady=2)
-                ctk.CTkLabel(scrollable_frame, text=event.get("time", "N/A"),
-                             font=ctk.CTkFont(size=12), fg_color="#f0f0f0", corner_radius=5, padx=5, pady=3).grid(row=row_num, column=3, sticky="ew", padx=2, pady=2)
-                ctk.CTkLabel(scrollable_frame, text=reminder,
-                             font=ctk.CTkFont(size=12), fg_color="#f0f0f0", corner_radius=5, padx=5, pady=3).grid(row=row_num, column=4, sticky="ew", padx=2, pady=2)
-                ctk.CTkLabel(scrollable_frame, text=status,
-                             font=ctk.CTkFont(size=12), fg_color="#f0f0f0", corner_radius=5, padx=5, pady=3).grid(row=row_num, column=5, sticky="ew", padx=2, pady=2)
-        else:
-            ctk.CTkLabel(scrollable_frame, text="No events scheduled yet.",
-                         font=ctk.CTkFont(size=14)).grid(row=0, column=0, pady=20, sticky="nsew")
-
+        # Calculate timedelta based on reminder setting
+        reminder_delta = datetime.timedelta()
+        if "minutes" in reminder_setting:
+            minutes = int(reminder_setting.split()[0])
+            reminder_delta = datetime.timedelta(minutes=minutes)
+        elif "hour" in reminder_setting:
+            hours = int(reminder_setting.split()[0])
+            reminder_delta = datetime.timedelta(hours=hours)
+        elif "day" in reminder_setting:
+            days = int(reminder_setting.split()[0])
+            reminder_delta = datetime.timedelta(days=days)
+        
+        reminder_datetime = event_datetime - reminder_delta
+        
+        return reminder_datetime
 
 def main():
-    app = ChatApp()
-    app.mainloop()
-
-
+    if len(sys.argv) > 1:
+        user_id = sys.argv[1]
+        app = ChatApp(user_id)
+        app.mainloop()
+    else:
+        print("Error: No user ID provided. This script should be run from main.py.")
+        
 if __name__ == "__main__":
     main()
