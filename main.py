@@ -5,9 +5,8 @@ from database import login_user, insert_user, create_tables
 from py import CalendarApp
 import sys
 import os
-import ai_assistant
-import mysql.connector.locales.eng.client_error
 import subprocess
+from Signup import ResponsiveSignup
 
 # --- THEME & CONFIGURATION ---
 ctk.set_appearance_mode("light")
@@ -26,7 +25,6 @@ class MainApp(ctk.CTk):
         self.current_user_id = None
         self.calendar_app_instance = None
         
-        # Configure the main window grid
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -38,21 +36,18 @@ class MainApp(ctk.CTk):
         login_frame.grid_columnconfigure(0, weight=1)
         login_frame.grid_rowconfigure(0, weight=1)
         
-        # Inner frame to center content
         content_frame = ctk.CTkFrame(login_frame, fg_color="white")
         content_frame.grid(row=0, column=0, sticky="nsew")
         content_frame.grid_columnconfigure(0, weight=1)
         content_frame.grid_columnconfigure(1, weight=1)
         content_frame.grid_rowconfigure(0, weight=1)
 
-        # Left panel for form
         left_panel = ctk.CTkFrame(content_frame, fg_color="white", corner_radius=0)
         left_panel.grid(row=0, column=0, sticky="nsew")
         left_panel.grid_columnconfigure(0, weight=1)
         left_panel.grid_rowconfigure(0, weight=1)
         left_panel.grid_rowconfigure(2, weight=1)
 
-        # Centering elements in the left panel
         form_frame = ctk.CTkFrame(left_panel, fg_color="white")
         form_frame.grid(row=1, column=0, padx=60, pady=60, sticky="nsew")
         form_frame.grid_columnconfigure(0, weight=1)
@@ -72,21 +67,18 @@ class MainApp(ctk.CTk):
         signin_btn = ctk.CTkButton(form_frame, text="Sign In", width=380, height=48, corner_radius=10, font=("Arial", 15, "bold"), fg_color=PRIMARY, hover_color="#244ECC", command=self.handle_login)
         signin_btn.pack(pady=25, fill="x")
         
-        # New sign-up button that opens Signup.py
         signup_btn = ctk.CTkButton(form_frame, text="Don't have an account? Sign Up", width=380, height=35, corner_radius=10, font=("Arial", 12), fg_color="transparent", text_color=PRIMARY, hover_color="#F0F0F0", command=self.open_signup)
         signup_btn.pack(pady=(0, 10), fill="x")
 
         self.result_label = ctk.CTkLabel(form_frame, text="", font=("Arial", 14))
         self.result_label.pack(pady=5)
         
-        # Right panel for illustration
         right_panel = ctk.CTkFrame(content_frame, fg_color="white", corner_radius=0)
         right_panel.grid(row=0, column=1, sticky="nsew")
         right_panel.grid_columnconfigure(0, weight=1)
         right_panel.grid_rowconfigure(0, weight=1)
         
         try:
-            # Check if running in a packaged app
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
@@ -103,22 +95,10 @@ class MainApp(ctk.CTk):
         return login_frame
 
     def open_signup(self):
-        """Open the Signup.py file in a new process"""
-        try:
-            # Determine the path to Signup.py
-            if getattr(sys, 'frozen', False):
-                # Running as compiled executable
-                base_path = os.path.dirname(sys.executable)
-            else:
-                # Running as script
-                base_path = os.path.dirname(os.path.abspath(__file__))
-            
-            signup_path = os.path.join(base_path, "Signup.py")
-            
-            # Open Signup.py using the same Python interpreter
-            subprocess.Popen([sys.executable, signup_path])
-        except Exception as e:
-            messagebox.showerror("Error", f"Could not open signup form: {str(e)}")
+        self.login_frame.grid_forget()
+        self.signup_frame = ResponsiveSignup(self).create_signup_frame()
+        self.signup_frame.grid(row=0, column=0, sticky="nsew")
+        self.title("MarkIt - Create Account")
 
     def show_calendar_frame(self):
         self.login_frame.grid_forget()

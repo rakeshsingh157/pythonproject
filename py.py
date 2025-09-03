@@ -9,6 +9,9 @@ import subprocess
 import os
 import sys
 
+# Import the ChatApp class directly
+import ai_assistant
+
 # Set a default appearance mode to Light
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -31,6 +34,7 @@ class CalendarApp:
         self.prev_icon = "◀"
         self.next_icon = "▶"
         self.refresh_icon = "🔄"
+        self.back_icon = "⬅️"
 
         # Blue shade colors only
         self.icon_colors = {
@@ -208,7 +212,6 @@ class CalendarApp:
                                            font=ctk.CTkFont(size=18))
         self.refresh_button.grid(row=0, column=2, padx=(0, 0))
 
-
         # AI Chat button next to search
         self.ai_chat_button = ctk.CTkButton(header_frame, text=self.ai_chat_icon, width=35, height=35,
                                            command=self.open_ai_chat, fg_color="transparent",
@@ -216,11 +219,19 @@ class CalendarApp:
                                            font=ctk.CTkFont(size=18))
         self.ai_chat_button.grid(row=0, column=3, padx=(0, 0))
         
-        event_list_container = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        event_list_container.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        # Container to switch between event list and AI assistant
+        self.right_dynamic_content = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+        self.right_dynamic_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
-        self.event_list_canvas = ctk.CTkScrollableFrame(event_list_container, fg_color="transparent")
+        # Event List View
+        self.event_list_container = ctk.CTkFrame(self.right_dynamic_content, fg_color="transparent")
+        self.event_list_container.pack(fill="both", expand=True)
+        self.event_list_canvas = ctk.CTkScrollableFrame(self.event_list_container, fg_color="transparent")
         self.event_list_canvas.pack(fill="both", expand=True)
+
+        # AI Assistant View
+        self.ai_chat_container = ctk.CTkFrame(self.right_dynamic_content, fg_color="transparent")
+        self.ai_assistant_instance = ai_assistant.ChatApp(self.user_id, master=self.ai_chat_container, on_close=self.show_calendar_view)
 
     def refresh_page(self):
         """Completely refresh the page by reinitializing database and redrawing everything"""
@@ -674,36 +685,15 @@ class CalendarApp:
         return reminder_datetime
 
     def open_ai_chat(self):
-        """Open AI assistant application, passing user_id as argument"""
-        try:
-            # Check if running in a packaged app
-            if getattr(sys, 'frozen', False):
-                base_path = sys._MEIPASS
-            else:
-                base_path = os.path.dirname(os.path.abspath(__file__))
-            
-            ai_assistant_path = os.path.join(base_path, "ai_assistant.py")
+        """Show the AI assistant frame and hide the event list."""
+        self.event_list_container.pack_forget()
+        self.ai_chat_container.pack(fill="both", expand=True)
 
-            if os.path.exists(ai_assistant_path):
-                # Launch ai_assistant.py with the user_id as a command-line argument
-                p = subprocess.Popen(["python", ai_assistant_path, self.user_id])
-                # Poll the process to check if it's still running
-                self.check_ai_process(p)
-            else:
-                messagebox.showerror("File Not Found", f"ai_assistant.py not found in:\n{base_path}\n\nPlease make sure the AI assistant file exists in the same directory.")
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to open AI assistant:\n{str(e)}")
-
-    def check_ai_process(self, p):
-        """Checks if the AI Assistant process is still running."""
-        if p.poll() is None:
-            # Process is still running, check again in 500ms
-            self.root.after(500, lambda: self.check_ai_process(p))
-        else:
-            # Process has terminated, now refresh the event list
-            self.refresh_event_list()
-
+    def show_calendar_view(self):
+        """Show the event list frame and hide the AI assistant."""
+        self.ai_chat_container.pack_forget()
+        self.event_list_container.pack(fill="both", expand=True)
+        self.refresh_event_list() # Refresh to see any new events
 
     def mark_event_done(self, event_id):
         # Check database connection

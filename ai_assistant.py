@@ -140,36 +140,27 @@ def search_events(user_id, search_term):
     return events_data
 
 
-class ChatApp(ctk.CTk):
+class ChatApp(ctk.CTkFrame):
     """AI Assistant chat application with Cohere backend and MySQL meeting scheduling."""
 
-    def __init__(self, user_id):
-        super().__init__()
+    def __init__(self, user_id, master=None, on_close=None):
+        super().__init__(master=master, fg_color="#f5f5f5")
 
         self.user_id = user_id
+        self.on_close = on_close
         
-        self.title("AI Assistant")
-        self.geometry("1100x700")
-        self.configure(fg_color="#f5f5f5")
+        self.pack(fill="both", expand=True)
 
         self.chat_history = []
         
-        self.grid_columnconfigure(0, weight=0)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        self.create_sidebar()
+        self.create_header(self)
 
-        self.main_frame = ctk.CTkFrame(self, fg_color="#f5f5f5", corner_radius=0)
-        self.main_frame.grid(row=0, column=1, sticky="nsew")
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(1, weight=1)
+        self.create_chat_area(self)
 
-        self.create_header(self.main_frame)
-
-        self.create_chat_area(self.main_frame)
-
-        self.create_input_area(self.main_frame)
+        self.create_input_area(self)
 
         welcome_msg = ("Hi! I'm your AI Calendar Assistant. I can help you with:\n\n"
                       "• Creating single or multiple events at once\n"
@@ -185,29 +176,15 @@ class ChatApp(ctk.CTk):
         self.add_message("AI Assistant", welcome_msg, is_user=False)
         self.after(100, self.scroll_to_bottom)
 
-    def create_sidebar(self):
-        sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color="White")
-        sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        sidebar_frame.grid_propagate(False)
-        sidebar_frame.grid_columnconfigure(0, weight=1)
-
-        sidebar_title = ctk.CTkLabel(sidebar_frame, text="MarkIt",
-                                     font=ctk.CTkFont(size=20, weight="bold"),
-                                     text_color="#1a1a1a")
-        sidebar_title.grid(row=0, column=0, padx=20, pady=20, sticky="n")
-
-        # Display the user ID
-        user_id_label = ctk.CTkLabel(sidebar_frame, text=f"User ID: {self.user_id}", font=ctk.CTkFont(size=10), text_color="#888888")
-        user_id_label.grid(row=1, column=0, padx=20, pady=5)
-
     def create_header(self, parent_frame):
         header_frame = ctk.CTkFrame(parent_frame, height=70, corner_radius=0, fg_color="white")
         header_frame.grid(row=0, column=0, sticky="ew")
         header_frame.grid_propagate(False)
         header_frame.grid_columnconfigure(1, weight=1)
 
-        home_label = ctk.CTkLabel(header_frame, text="🏠", font=ctk.CTkFont(size=18), text_color="#666666")
-        home_label.grid(row=0, column=0, padx=20, pady=20, sticky="w")
+        back_button = ctk.CTkButton(header_frame, text="⬅️ Back", width=80, height=35,
+                                    command=self.on_close, fg_color="#666666", hover_color="#888888")
+        back_button.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         title_label = ctk.CTkLabel(header_frame, text="AI Assistant",
                                    font=ctk.CTkFont(size=20, weight="bold"),
@@ -582,13 +559,5 @@ class ChatApp(ctk.CTk):
         
         return reminder_datetime
 
-def main():
-    if len(sys.argv) > 1:
-        user_id = sys.argv[1]
-        app = ChatApp(user_id)
-        app.mainloop()
-    else:
-        print("Error: No user ID provided. This script should be run from main.py.")
-        
-if __name__ == "__main__":
-    main()
+# Remove the main() function and the if __name__ == "__main__" block
+# as this file will now be imported and used as a class.
