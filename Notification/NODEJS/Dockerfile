@@ -2,20 +2,38 @@ FROM node:18-alpine
 
 # Install Chromium + dependencies + build tools for npm modules
 RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    gcompat \
-    libstdc++ \
-    udev \
-    bash \
-    python3 \
-    make \
-    g++
+    libatk1.0-0t64 \
+  libc6 \
+  libcairo2 \
+  libcups2t64 \
+  libdbus-1-3 \
+  libexpat1 \
+  libfontconfig1 \
+  libgcc-s1 \
+  libgdk-pixbuf2.0-0 \
+  libglib2.0-0t64 \
+  libgtk-3-0t64 \
+  libnspr4 \
+  libpango-1.0-0 \
+  libx11-6 \
+  libx11-xcb1 \
+  libxcb1 \
+  libxcomposite1 \
+  libxcursor1 \
+  libxdamage1 \
+  libxext6 \
+  libxfixes3 \
+  libxi6 \
+  libxrandr2 \
+  libxrender1 \
+  libasound2t64 \
+  libatk-bridge2.0-0t64 \
+  ca-certificates \
+  fonts-liberation \
+  libnss3 \
+  lsb-release \
+  xdg-utils \
+  wget
 
 # Puppeteer environment
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \

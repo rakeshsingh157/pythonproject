@@ -2,11 +2,14 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import smtplib
 from email.mime.text import MIMEText
+
 app = FastAPI()
+
 class EmailRequest(BaseModel):
     to: str
     subject: str
     message: str
+
 @app.post("/sendEmail")
 def send_email(req: EmailRequest):
     sender = "jobportal00000@gmail.com"

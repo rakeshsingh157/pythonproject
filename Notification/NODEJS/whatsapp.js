@@ -5,17 +5,17 @@ app.use(express.json());
 
 let client = null;
 
-// Initialize WhatsApp client
+
 async function initializeWhatsApp() {
     try {
         console.log('Initializing WhatsApp client...');
         
-        // Clean up any existing session issues
+  
         const fs = require('fs');
         const path = require('path');
         const sessionPath = path.join(__dirname, 'session');
         
-        // Remove any problematic session files
+ 
         try {
             if (fs.existsSync(sessionPath)) {
                 const stats = fs.statSync(sessionPath);
@@ -72,7 +72,6 @@ async function initializeWhatsApp() {
     }
 }
 
-// Initialize WhatsApp on startup
 initializeWhatsApp();
 
 app.post('/sendMessage', async (req, res) => {
@@ -91,7 +90,7 @@ app.post('/sendMessage', async (req, res) => {
     }
 });
 
-// Health check endpoint
+
 app.get('/health', (req, res) => {
     res.send({ 
         status: client ? "ready" : "initializing",
