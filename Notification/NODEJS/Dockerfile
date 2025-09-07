@@ -1,7 +1,6 @@
-# Use Node.js 18 Alpine for smaller image size
 FROM node:18-alpine
 
-# Install necessary packages for WhatsApp automation
+# Install Chromium + dependencies + build tools for npm modules
 RUN apk add --no-cache \
     chromium \
     nss \
@@ -10,20 +9,26 @@ RUN apk add --no-cache \
     harfbuzz \
     ca-certificates \
     ttf-freefont \
-    && rm -rf /var/cache/apk/*
+    gcompat \
+    libstdc++ \
+    udev \
+    bash \
+    python3 \
+    make \
+    g++
 
-# Tell Puppeteer to skip installing Chromium. We'll be using the installed package.
+# Puppeteer environment
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Create app directory
+# Working directory
 WORKDIR /app
 
-# Create non-root user for security
+# Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S whatsapp -u 1001
 
-# Copy package files first for better Docker layer caching
+# Copy package files for caching
 COPY package*.json ./
 
 # Install dependencies
@@ -32,9 +37,8 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy application code
 COPY . .
 
-# Create session directory and set permissions
-RUN mkdir -p /app/session && \
-    chown -R whatsapp:nodejs /app
+# Create session folder
+RUN mkdir -p /app/session && chown -R whatsapp:nodejs /app
 
 # Switch to non-root user
 USER whatsapp
@@ -46,5 +50,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:5000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-# Start the application
+# Start app
 CMD ["node", "whatsapp.js"]
