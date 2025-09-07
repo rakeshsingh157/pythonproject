@@ -4,11 +4,17 @@ FROM node:18
 # App directory banaye
 WORKDIR /app
 
-# Pure project including node_modules copy karo
+# Package files copy karo
+COPY package*.json ./
+
+# Dependencies install karo
+RUN npm install
+
+# Baaki code copy karo
 COPY . .
 
 # App jo port use karega
 EXPOSE 3000
 
 # Start command
-CMD ["node", "whatsapp.js"]
+CMD ["node", "app.js"]
