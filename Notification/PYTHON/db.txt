@@ -1,0 +1,25 @@
+
+
+CREATE TABLE IF NOT EXISTS events (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id varchar(255),
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                date VARCHAR(255) NOT NULL,
+                time VARCHAR(50),
+                done BOOLEAN NOT NULL,
+                reminder_setting VARCHAR(50),
+                reminder_datetime VARCHAR(255),
+                reminde1 boolean,
+                reminde2 boolean
+            );
+
+
+ CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id varchar(255) not null,
+                username VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                phone VARCHAR(20) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP );

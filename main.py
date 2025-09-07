@@ -7,13 +7,10 @@ import sys
 import os
 import subprocess
 from Signup import ResponsiveSignup
-
-# --- THEME & CONFIGURATION ---
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
 PRIMARY = "#2F63FF"
 
-# Ensure the database tables exist on startup
 create_tables()
 
 class MainApp(ctk.CTk):

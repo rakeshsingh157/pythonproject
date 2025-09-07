@@ -3,9 +3,7 @@ from mysql.connector import Error
 import bcrypt
 import uuid
 
-# --- DATABASE CONNECTION ---
 def create_connection():
-    """Create a database connection to the MySQL database."""
     connection = None
     try:
         connection = mysql.connector.connect(
@@ -13,7 +11,7 @@ def create_connection():
             user="admin",
             password="DBpicshot",
             database="eventsreminder",
-            use_pure=True # Add this line
+            use_pure=True
         )
         if connection.is_connected():
             print("Successfully connected to the database")
@@ -21,13 +19,10 @@ def create_connection():
         print(f"Error connecting to MySQL database: {e}")
     return connection
 
-# --- USER TABLE MANAGEMENT ---
 def create_tables():
-    """Create the users and events tables if they don't exist."""
     connection = create_connection()
     if connection is None:
         return
-
     try:
         cursor = connection.cursor()
         cursor.execute("""
@@ -42,8 +37,6 @@ def create_tables():
                 PRIMARY KEY (id)
             )
         """)
-        
-        # Update the events table to have a user_id
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -57,7 +50,6 @@ def create_tables():
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
-        
         connection.commit()
         print("Users and Events tables created/updated successfully.")
     except Error as e:
@@ -67,22 +59,15 @@ def create_tables():
             cursor.close()
             connection.close()
 
-# --- AUTHENTICATION ---
 def login_user(email, password):
-    """
-    Authenticates a user and returns their unique user ID.
-    Returns the user_id on success, None on failure.
-    """
     connection = create_connection()
     if connection is None:
         return None
-    
     try:
         cursor = connection.cursor()
         query = "SELECT user_id, password FROM users WHERE email = %s"
         cursor.execute(query, (email,))
         result = cursor.fetchone()
-        
         if result:
             user_id, hashed_password = result
             if bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
@@ -92,7 +77,6 @@ def login_user(email, password):
                 print(f"Login failed for {email}: Incorrect password.")
         else:
             print(f"Login failed for {email}: User not found.")
-            
         return None
     except Error as e:
         print(f"Error during login: {e}")
@@ -103,20 +87,13 @@ def login_user(email, password):
             connection.close()
 
 def insert_user(username, email, phone, password):
-    """Insert a new user with a hashed password and unique user ID into the users table."""
     connection = create_connection()
     if connection is None:
         return False
-
     try:
         cursor = connection.cursor()
-
-        # Generate a unique user ID
         user_id = uuid.uuid4().hex[:12]
-
-        # Hash the password
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
         query = "INSERT INTO users (user_id, username, email, phone, password) VALUES (%s, %s, %s, %s, %s)"
         values = (user_id, username, email, phone, hashed_password.decode('utf-8'))
         cursor.execute(query, values)

@@ -6,16 +6,13 @@ import uuid
 import mysql.connector
 import sys
 
-# Set the appearance mode for customtkinter
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-# --- Configuration for Cohere API ---
 COHERE_API_KEY = "QHw20MxzRN9JU1VQUKdovICaOXPONYz86DXdUiqy"
 co = cohere.ClientV2(COHERE_API_KEY)
 COHERE_MODEL = "command-a-03-2025"
 
-# --- Configuration for MySQL Database ---
 DB_CONFIG = {
     "host": "photostore.ct0go6um6tj0.ap-south-1.rds.amazonaws.com",
     "user": "admin",
@@ -23,7 +20,6 @@ DB_CONFIG = {
     "database": "eventsreminder"
 }
 
-# --- Helper functions for MySQL database operations ---
 def get_db_connection():
     """Establishes and returns a database connection."""
     try:
@@ -371,7 +367,7 @@ class ChatApp(ctk.CTkFrame):
                                 next_week = datetime.date.today() + datetime.timedelta(days=7)
                                 date_str = next_week.strftime('%Y-%m-%d')
                             
-                            # Validate and normalize time input
+                            
                             try:
                                 time_cleaned = time_str.strip().replace(' ', '')
                                 if 'am' in time_cleaned.lower() or 'pm' in time_cleaned.lower():
@@ -380,7 +376,7 @@ class ChatApp(ctk.CTkFrame):
                                     dt_obj = datetime.datetime.strptime(time_cleaned, '%H:%M')
                                 time_str_db = dt_obj.strftime('%H:%M')
                             except ValueError:
-                                continue # Skip invalid time entries
+                                continue 
 
                             title = meeting_data.get("title") or meeting_data.get("description") or "New Event"
                             description_text = meeting_data.get("description", "")
@@ -389,7 +385,7 @@ class ChatApp(ctk.CTkFrame):
                             if title == description_text:
                                 description_text = ""
                             
-                            # Calculate reminder time
+                            
                             reminder_datetime = self.calculate_reminder_time(date_str, time_str_db, reminder_setting)
 
 
@@ -536,14 +532,14 @@ class ChatApp(ctk.CTkFrame):
         if reminder_setting == "No Reminder":
             return None
 
-        # Combine date and time to a single datetime object
+       
         event_datetime_str = f"{event_date} {event_time}"
         try:
             event_datetime = datetime.datetime.strptime(event_datetime_str, '%Y-%m-%d %H:%M')
         except ValueError:
-            return None # Return None if time format is invalid
+            return None 
 
-        # Calculate timedelta based on reminder setting
+     
         reminder_delta = datetime.timedelta()
         if "minutes" in reminder_setting:
             minutes = int(reminder_setting.split()[0])
@@ -559,5 +555,3 @@ class ChatApp(ctk.CTkFrame):
         
         return reminder_datetime
 
-# Remove the main() function and the if __name__ == "__main__" block
-# as this file will now be imported and used as a class.
