@@ -1,45 +1,50 @@
-# Node.js 18 base image
-FROM node:18
+# Use Node.js 18 Alpine for smaller image size
+FROM node:18-alpine
 
-# App directory
+# Install necessary packages for WhatsApp automation
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    && rm -rf /var/cache/apk/*
+
+# Tell Puppeteer to skip installing Chromium. We'll be using the installed package.
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+# Create app directory
 WORKDIR /app
 
-# Browser dependencies install karo (Puppeteer ke liye)
-RUN apt-get update && apt-get install -y \
-    chromium \
-    wget \
-    ca-certificates \
-    fonts-liberation \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    xdg-utils \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S whatsapp -u 1001
 
-# Package files copy karo
+# Copy package files first for better Docker layer caching
 COPY package*.json ./
 
-# Dependencies install karo
-RUN npm install
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
 
-# Baaki code copy karo
+# Copy application code
 COPY . .
 
-# App ka port
+# Create session directory and set permissions
+RUN mkdir -p /app/session && \
+    chown -R whatsapp:nodejs /app
+
+# Switch to non-root user
+USER whatsapp
+
+# Expose port
 EXPOSE 5000
 
-# Start command
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:5000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+# Start the application
 CMD ["node", "whatsapp.js"]

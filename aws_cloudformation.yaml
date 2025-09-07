@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Notification Services Stack for Calendar App'
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    Description: EC2 instance type
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+      - t3.xlarge
+  
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+  
+  AllowedCIDR:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR block allowed to access the services
+
+Resources:
+  # Security Group
+  NotificationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for notification services
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedCIDR
+          Description: SSH access
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: !Ref AllowedCIDR
+          Description: WhatsApp API
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: !Ref AllowedCIDR
+          Description: Email API
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AllowedCIDR
+          Description: HTTP
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AllowedCIDR
+          Description: HTTPS
+
+  # IAM Role for EC2
+  NotificationInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  # Instance Profile
+  NotificationInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref NotificationInstanceRole
+
+  # EC2 Instance
+  NotificationInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c02fb55956c7d316  # Amazon Linux 2 AMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds:
+        - !Ref NotificationSecurityGroup
+      IamInstanceProfile: !Ref NotificationInstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          
+          # Install Node.js 18
+          curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
+          yum install -y nodejs
+          
+          # Install Python 3.11
+          yum install -y python3.11 python3.11-pip python3.11-devel
+          
+          # Install system dependencies
+          yum install -y git curl wget net-tools chromium gcc gcc-c++ make
+          
+          # Create application directory
+          mkdir -p /opt/notification-services
+          cd /opt/notification-services
+          
+          # Clone or copy your application code here
+          # git clone https://github.com/your-repo/notification-services.git .
+          
+          # Install dependencies
+          # cd Notification/NODEJS && npm install
+          # cd ../PYTHON && pip3.11 install -r requirements.txt
+          
+          # Make scripts executable
+          # chmod +x *.sh
+          
+          # Start services
+          # ./start_all_services_aws.sh
+          
+          # Enable CloudWatch agent
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+            -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+      Tags:
+        - Key: Name
+          Value: Notification-Services
+        - Key: Environment
+          Value: Production
+
+  # Elastic IP
+  NotificationElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref NotificationInstance
+      Domain: vpc
+
+Outputs:
+  InstanceId:
+    Description: Instance ID of the notification server
+    Value: !Ref NotificationInstance
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceId
+
+  PublicIP:
+    Description: Public IP address of the notification server
+    Value: !Ref NotificationElasticIP
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicIP
+
+  WhatsAppAPIURL:
+    Description: WhatsApp API endpoint
+    Value: !Sub http://${NotificationElasticIP}:5000
+    Export:
+      Name: !Sub ${AWS::StackName}-WhatsAppAPI
+
+  EmailAPIURL:
+    Description: Email API endpoint
+    Value: !Sub http://${NotificationElasticIP}:8000
+    Export:
+      Name: !Sub ${AWS::StackName}-EmailAPI
+
+  SSHCommand:
+    Description: SSH command to connect to the instance
+    Value: !Sub ssh -i ${KeyPairName}.pem ec2-user@${NotificationElasticIP}

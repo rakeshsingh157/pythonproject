@@ -1,0 +1,1 @@
+'@open-wa/wa-automate'
