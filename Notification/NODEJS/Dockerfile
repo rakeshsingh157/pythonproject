@@ -1,9 +1,10 @@
 # Node.js 18 base image
 FROM node:18
 
+# App directory
 WORKDIR /app
 
-# Browser dependencies install karo
+# Browser dependencies install karo (Puppeteer ke liye)
 RUN apt-get update && apt-get install -y \
     chromium \
     wget \
@@ -37,8 +38,8 @@ RUN npm install
 # Baaki code copy karo
 COPY . .
 
-# App ka port (agar needed ho)
-EXPOSE 3000
+# App ka port
+EXPOSE 5000
 
 # Start command
 CMD ["node", "whatsapp.js"]
