@@ -5,7 +5,10 @@ app.use(express.json());
 
 let client;
 
-create().then(c => client = c);
+create({ 
+    useChrome: true, 
+    executablePath: '/usr/bin/chromium' 
+}).then(c => client = c);
 
 app.post('/sendMessage', async (req, res) => {
     const { to, message } = req.body;
