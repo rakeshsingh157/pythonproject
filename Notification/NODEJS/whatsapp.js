@@ -1,101 +1,53 @@
-const { create } = require('@open-wa/wa-automate');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 const express = require('express');
+
 const app = express();
 app.use(express.json());
 
-let client = null;
-
-
-async function initializeWhatsApp() {
-    try {
-        console.log('Initializing WhatsApp client...');
-        
-  
-        const fs = require('fs');
-        const path = require('path');
-        const sessionPath = path.join(__dirname, 'session');
-        
- 
-        try {
-            if (fs.existsSync(sessionPath)) {
-                const stats = fs.statSync(sessionPath);
-                if (stats.isDirectory()) {
-                    console.log('Cleaning up existing session directory...');
-                    fs.rmSync(sessionPath, { recursive: true, force: true });
-                }
-            }
-        } catch (cleanupError) {
-            console.log('Session cleanup completed');
-        }
-        
-        client = await create({
-            sessionId: 'session',
-            multiDevice: true,
-            authTimeout: 60,
-            blockCrashLogs: true,
-            disableSpins: true,
-            headless: true,
-            hostNotificationLang: 'PT_BR',
-            logConsole: true,
-            popup: false,
-            qrTimeout: 0,
-            restartOnCrash: true,
-            sessionDataPath: './session',
-            useChrome: false,
-            chromiumArgs: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--headless',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-extensions',
-                '--disable-plugins',
-                '--disable-images',
-                '--disable-javascript',
-                '--disable-default-apps',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding'
-            ]
-        });
-        
-        console.log('WhatsApp client initialized successfully!');
-        return true;
-    } catch (error) {
-        console.error('Failed to initialize WhatsApp client:', error);
-        return false;
-    }
-}
-
-initializeWhatsApp();
-
-app.post('/sendMessage', async (req, res) => {
-    try {
-        const { to, message } = req.body;
-        if (!client) {
-            return res.status(500).send({ error: "WhatsApp client not ready. Please wait for initialization." });
-        }
-        
-        console.log(`Sending message to ${to}: ${message}`);
-        await client.sendText(to, message);
-        res.send({ status: "Message sent successfully!" });
-    } catch (error) {
-        console.error('Error sending message:', error);
-        res.status(500).send({ error: "Failed to send message", details: error.message });
+// WhatsApp client setup
+const client = new Client({
+    authStrategy: new LocalAuth(), // Session auto-save karega
+    puppeteer: {
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox"]
     }
 });
 
-
-app.get('/health', (req, res) => {
-    res.send({ 
-        status: client ? "ready" : "initializing",
-        timestamp: new Date().toISOString()
-    });
+client.on('qr', qr => {
+    console.log('Scan this QR code with WhatsApp:');
+    qrcode.generate(qr, { small: true });
 });
 
-app.listen(5000, () => console.log("WhatsApp API running on port 5000"));
+client.on('ready', () => {
+    console.log('WhatsApp client is ready!');
+});
+
+// REST API endpoint
+app.post('/send-message', async (req, res) => {
+    try {
+        let { number, message } = req.body;
+
+        // Convert number to WhatsApp format
+        number = number.toString().replace(/[^0-9]/g, "");
+        if (!number.endsWith("@c.us")) {
+            number = `${number}@c.us`;
+        }
+
+        console.log(`Sending message to ${number}: ${message}`);
+        await client.sendMessage(number, message);
+
+        res.json({ success: true, number, message });
+    } catch (err) {
+        console.error("Error sending message:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+client.initialize();
+
+// Start express server
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`API server running on http://localhost:${PORT}`);
+});
