@@ -1,8 +1,10 @@
 # Base image
-FROM node:18-slim
+FROM node:18-bullseye-slim
 
-# Install dependencies for Chromium
+# Install Chromium dependencies
 RUN apt-get update && apt-get install -y \
+    chromium \
+    chromium-driver \
     wget \
     ca-certificates \
     fonts-liberation \
@@ -46,17 +48,17 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy package.json and package-lock.json
+# Copy package files
 COPY package*.json ./
 
 # Install Node dependencies
 RUN npm install
 
-# Copy application code
+# Copy source code
 COPY . .
 
-# Expose API port
-EXPOSE 5000
+# Expose port for API
+EXPOSE 3000
 
-# Start the app
-CMD ["node", "index.js"]
+# Run bot
+CMD ["node", "whatsapp.js"]
