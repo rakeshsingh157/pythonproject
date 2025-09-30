@@ -268,3 +268,4 @@ class ResponsiveSignup:
                     )
         except Exception as e:
             print(f"Error updating widget fonts: {e}")
+            
