@@ -10,11 +10,11 @@ ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
 COHERE_API_KEY = "QHw20MxzRN9JU1VQUKdovICaOXPONYz86DXdUiqy"
-co = cohere.ClientV2(COHERE_API_KEY)
+co = cohere.Client(COHERE_API_KEY)
 COHERE_MODEL = "command-a-03-2025"
 
 DB_CONFIG = {
-    "host": "photostore.ct0go6um6tj0.ap-south-1.rds.amazonaws.com",
+    "host": "database-1.chcyc88wcx2l.eu-north-1.rds.amazonaws.com",
     "user": "admin",
     "password": "DBpicshot",
     "database": "eventsreminder"
@@ -29,15 +29,15 @@ def get_db_connection():
         print(f"Error connecting to MySQL database: {err}")
         return None
 
-def save_event_to_db(user_id, title, description, date, time, reminder_setting="15 minutes before", reminder_datetime=None):
+def insert_event_to_db(user_id, title, description, category, date, time, reminder_setting=None, reminder_datetime=None):
     """Saves a single event to the database for a specific user."""
     conn = get_db_connection()
     if not conn: return False
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO events (user_id, title, description, date, time, done, reminder_setting, reminder_datetime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-            (user_id, title, description, date, time, False, reminder_setting, reminder_datetime)
+            "INSERT INTO events (user_id, title, description, Category, date, time, done, reminder_setting, reminder_datetime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (user_id, title, description, category, date, time, False, reminder_setting, reminder_datetime)
         )
         conn.commit()
         return True
@@ -56,15 +56,16 @@ def get_events_from_db(user_id):
     if not conn: return events_data
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT title, description, date, time, done, reminder_setting FROM events WHERE user_id = %s ORDER BY date, time", (user_id,))
+        cursor.execute("SELECT title, description, Category, date, time, done, reminder_setting FROM events WHERE user_id = %s ORDER BY date, time", (user_id,))
         for row in cursor.fetchall():
             events_data.append({
                 "title": row[0],
                 "description": row[1],
-                "date": row[2],
-                "time": row[3],
-                "done": row[4],
-                "reminder_setting": row[5]
+                "category": row[2],
+                "date": row[3],
+                "time": row[4],
+                "done": row[5],
+                "reminder_setting": row[6]
             })
     except mysql.connector.Error as err:
         print(f"Error retrieving events from database: {err}")
@@ -299,33 +300,50 @@ class ChatApp(ctk.CTkFrame):
             f"Current Time: {current_datetime} "
             "For MULTIPLE events, return a JSON ARRAY with each event as an object. "
             "For SINGLE event, return a JSON OBJECT. "
-            "Each event should have fields: title, description, date (YYYY-MM-DD), time (HH:MM), reminder_setting (optional). "
+            "Each event should have fields: title, description, category, date (YYYY-MM-DD), time (HH:MM), reminder_setting (optional). "
             "For description, include relevant details about the event. If no specific description is provided, "
             "create a brief relevant description based on the title and context. "
+            "For category, choose the most appropriate from these options: "
+            "[work, home, sports, fun, health, fitness, personal, learning, finance, errands, cleaning, gardening, cooking, pets, meeting, commute, networking, admin, social, entertainment, travel, hobby, volunteering, important, to-do, later, family]. "
+            "Use context clues to determine the best category. Examples: doctor->health, gym->fitness, office->work, dinner->cooking, etc. "
             "For reminder_setting, use values like '15 minutes before', '30 minutes before', '1 hour before', '1 day before'. "
             "If no reminder is specified, omit the reminder_setting field (default will be 15 minutes). "
             "Handle relative dates like 'today', 'tomorrow', 'next week'. "
             "If no date is specified, assume today. If time format is unclear, use 24-hour format. "
             "Examples: "
-            "- 'meeting 6 pm, game 7 pm' → [{'title':'Meeting','description':'Team meeting','date':'2025-01-30','time':'18:00'},{'title':'Game','description':'Game session','date':'2025-01-30','time':'19:00'}] "
-            "- 'doctor appointment tomorrow 10 am' → {'title':'Doctor Appointment','description':'Medical appointment','date':'2025-01-31','time':'10:00'} "
+            "- 'meeting 6 pm, game 7 pm' → [{'title':'Meeting','description':'Team meeting','category':'meeting','date':'2025-01-30','time':'18:00'},{'title':'Game','description':'Game session','category':'fun','date':'2025-01-30','time':'19:00'}] "
+            "- 'doctor appointment tomorrow 10 am' → {'title':'Doctor Appointment','description':'Medical appointment','category':'health','date':'2025-01-31','time':'10:00'} "
             "Respond with ONLY the JSON (array or object) and NO other text for scheduling requests. "
             "For other questions or conversations, respond with a helpful and polite text message."
         )
 
-        cohere_messages = [{"role": "system", "content": system_prompt_for_parsing}]
+        # Convert chat history to old format
+        chat_history = []
+        user_message = ""
+        
         for h in self.chat_history:
-            if h["role"] in ["user", "assistant"]:
-                cohere_messages.append({"role": h["role"], "content": h["content"]})
+            if h["role"] == "user":
+                user_message = h["content"]
+            elif h["role"] == "assistant":
+                if user_message:  # Only add if we have a user message
+                    chat_history.append({"user_name": "User", "text": user_message})
+                    chat_history.append({"user_name": "Chatbot", "text": h["content"]})
+                    user_message = ""
+        
+        # Get the latest user message
+        if not user_message and self.chat_history:
+            user_message = self.chat_history[-1]["content"] if self.chat_history[-1]["role"] == "user" else ""
 
         try:
             response = co.chat(
                 model=COHERE_MODEL,
-                messages=cohere_messages,
+                message=user_message,
+                chat_history=chat_history,
+                preamble_override=system_prompt_for_parsing,
                 temperature=0.1,
             )
 
-            ai_text_response = response.message.content[0].text
+            ai_text_response = response.text
 
             parsed_meetings = []
             try:
@@ -380,6 +398,7 @@ class ChatApp(ctk.CTkFrame):
 
                             title = meeting_data.get("title") or meeting_data.get("description") or "New Event"
                             description_text = meeting_data.get("description", "")
+                            category = meeting_data.get("category", "personal")
                             reminder_setting = meeting_data.get("reminder_setting", "15 minutes before")
 
                             if title == description_text:
@@ -389,7 +408,7 @@ class ChatApp(ctk.CTkFrame):
                             reminder_datetime = self.calculate_reminder_time(date_str, time_str_db, reminder_setting)
 
 
-                            if save_event_to_db(self.user_id, title, description_text, date_str, time_str_db, reminder_setting, reminder_datetime):
+                            if insert_event_to_db(self.user_id, title, description_text, category, date_str, time_str_db, reminder_setting, reminder_datetime):
                                 meetings_added_count += 1
                     except Exception as e:
                         print(f"Error parsing meeting: {e}")
