@@ -43,11 +43,11 @@ class CalendarApp:
 
         self.initialize_database()
 
-        self.event_date_var = ctk.StringVar(value=datetime.date.today().strftime("%d %b, %Y"))
-        self.reminder_var = ctk.StringVar(value="No Reminder")
-        self.search_var = ctk.StringVar()
+        self.event_date_var = ctk.StringVar(master=self.root, value=datetime.date.today().strftime("%d %b, %Y"))
+        self.reminder_var = ctk.StringVar(master=self.root, value="No Reminder")
+        self.search_var = ctk.StringVar(master=self.root)
         self.current_date = datetime.date.today()
-        self.month_label_var = ctk.StringVar()
+        self.month_label_var = ctk.StringVar(master=self.root)
 
         self.selected_date_canvas_item = None
         self.calendar_widgets = {}
@@ -63,11 +63,14 @@ class CalendarApp:
             if hasattr(self, 'conn') and self.conn and self.conn.is_connected():
                 self.conn.close()
             self.conn = mysql.connector.connect(
-                host="photostore.ct0go6um6tj0.ap-south-1.rds.amazonaws.com",
+                host="database-1.chcyc88wcx2l.eu-north-1.rds.amazonaws.com",
                 user="admin",
                 password="DBpicshot",
                 database="eventsreminder",
-                use_pure=True
+                port=3306,
+                charset='utf8mb4',
+                use_pure=True,
+                autocommit=False
             )
             self.cursor = self.conn.cursor()
             return True
@@ -138,6 +141,21 @@ class CalendarApp:
         self.date_entry = ctk.CTkEntry(time_date_frame, textvariable=self.event_date_var, state='readonly',
                                      corner_radius=8, border_width=1, fg_color="#f9fafb", border_color="#E5E7EB")
         self.date_entry.pack(side="left", fill="x", expand=True)
+        # Category selection
+        category_values = [
+            "work", "home", "sports", "fun", "health", "fitness", "personal", 
+            "learning", "finance", "errands", "cleaning", "gardening", "cooking", 
+            "pets", "meeting", "commute", "networking", "admin", "social", 
+            "entertainment", "travel", "hobby", "volunteering", "important", 
+            "to-do", "later", "family"
+        ]
+        self.category_var = ctk.StringVar(master=self.root, value="personal")
+        self.category_combo = ctk.CTkComboBox(new_event_frame, variable=self.category_var, values=category_values,
+                                            corner_radius=8, border_width=1, fg_color="white", border_color="#E5E7EB",
+                                            button_color="#3B82F6", button_hover_color="#2563EB")
+        self.category_combo.pack(fill="x", pady=8)
+        self.category_combo.set("personal")
+        
         reminder_values = [
             "No Reminder", "5 minutes before", "10 minutes before", "15 minutes before",
             "30 minutes before", "1 hour before", "2 hours before", "1 day before"
@@ -336,14 +354,14 @@ class CalendarApp:
             if not self.initialize_database():
                 return
         try:
-            self.cursor.execute("SELECT id, date, time, title, description, done, reminder_setting FROM events WHERE user_id = %s ORDER BY STR_TO_DATE(date, '%Y-%m-%d') ASC, time ASC", (self.user_id,))
+            self.cursor.execute("SELECT id, date, time, title, description, done, reminder_setting, Category FROM events WHERE user_id = %s ORDER BY STR_TO_DATE(date, '%Y-%m-%d') ASC, time ASC", (self.user_id,))
             all_events = self.cursor.fetchall()
         except mysql.connector.Error as err:
             messagebox.showerror("Database Error", f"Failed to fetch events.\nError: {err}")
             return
         filtered_events = []
         for event_data in all_events:
-            event_id, date_str, time_str, title_str, desc_str, done_int, reminder_str = event_data
+            event_id, date_str, time_str, title_str, desc_str, done_int, reminder_str, category_str = event_data
             if not search_text:
                 filtered_events.append(event_data)
             elif search_text in title_str.lower() or search_text in desc_str.lower() or search_text in date_str.lower():
@@ -356,7 +374,7 @@ class CalendarApp:
                          text_color=("#9CA3AF", "#6B7280")).pack()
         else:
             for event_data in filtered_events:
-                event_id, date_str_db, time_str, title_str, desc_str, done_int, reminder_str = event_data
+                event_id, date_str_db, time_str, title_str, desc_str, done_int, reminder_str, category_str = event_data
                 try:
                     display_date_obj = datetime.datetime.strptime(date_str_db, '%Y-%m-%d').date()
                     display_date_str = display_date_obj.strftime('%d %b, %Y')
@@ -370,6 +388,7 @@ class CalendarApp:
                         "title": title_str,
                         "description": desc_str,
                         "done": bool(done_int),
+                        "category": category_str or "personal",
                         "reminder": reminder_str
                     }
                 )
@@ -440,6 +459,22 @@ class CalendarApp:
                                  font=ctk.CTkFont(family="Helvetica", size=12), 
                                  text_color=desc_color, anchor="w")
         desc_label.pack(anchor="w", fill="x")
+        
+        # Category badge
+        category = event_data.get("category", "personal")
+        category_colors = {
+            "work": "#3B82F6", "meeting": "#3B82F6", "admin": "#3B82F6", "networking": "#3B82F6",
+            "health": "#EF4444", "fitness": "#EF4444",
+            "fun": "#F59E0B", "entertainment": "#F59E0B", "hobby": "#F59E0B", "sports": "#F59E0B",
+            "home": "#10B981", "family": "#10B981", "personal": "#10B981", "cleaning": "#10B981",
+            "learning": "#8B5CF6", "finance": "#8B5CF6", "important": "#8B5CF6",
+            "social": "#EC4899", "travel": "#EC4899", "volunteering": "#EC4899"
+        }
+        category_color = category_colors.get(category, "#6B7280")
+        category_badge = ctk.CTkLabel(info_col, text=f"#{category}", 
+                                     font=ctk.CTkFont(family="Helvetica", size=10, weight="bold"), 
+                                     text_color=category_color, anchor="w")
+        category_badge.pack(anchor="w", pady=(2, 0))
         action_col = ctk.CTkFrame(content_frame, fg_color="transparent")
         action_col.pack(side="right", padx=(10, 0))
         check_color = "#10B981" if not event_data["done"] else "#9CA3AF"
@@ -493,9 +528,10 @@ class CalendarApp:
         except ValueError:
             messagebox.showerror("Invalid Date Format", "The selected date has an invalid format.")
             return
+        category = self.category_var.get()
         reminder_time = self.calculate_reminder_time(date_str_db, time_str_db, reminder_setting)
-        sql = "INSERT INTO events (user_id, title, description, date, time, done, reminder_setting, reminder_datetime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-        val = (self.user_id, title, description, date_str_db, time_str_db, False, reminder_setting, reminder_time)
+        sql = "INSERT INTO events (user_id, title, description, Category, date, time, done, reminder_setting, reminder_datetime) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        val = (self.user_id, title, description, category, date_str_db, time_str_db, False, reminder_setting, reminder_time)
         try:
             self.cursor.execute(sql, val)
             self.conn.commit()
@@ -504,6 +540,7 @@ class CalendarApp:
             self.desc_entry.delete(0, 'end')
             self.time_entry.delete(0, 'end')
             self.reminder_var.set("No Reminder")
+            self.category_var.set("personal")
             self.title_entry.focus()
             messagebox.showinfo("Success", "Event created successfully!")
         except mysql.connector.Error as err:
