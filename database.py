@@ -7,11 +7,14 @@ def create_connection():
     connection = None
     try:
         connection = mysql.connector.connect(
-            host="photostore.ct0go6um6tj0.ap-south-1.rds.amazonaws.com",
+            host="database-1.chcyc88wcx2l.eu-north-1.rds.amazonaws.com",
             user="admin",
             password="DBpicshot",
             database="eventsreminder",
-            use_pure=True
+            port=3306,
+            charset='utf8mb4',
+            use_pure=True,
+            autocommit=False
         )
         if connection.is_connected():
             print("Successfully connected to the database")
@@ -29,6 +32,8 @@ def create_tables():
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT,
                 user_id VARCHAR(255) UNIQUE NOT NULL,
+                photo_url VARCHAR(255) DEFAULT 'https://i.ibb.co/sJsj4h5X/c229ebb16cd9.jpg',
+                profile_bio VARCHAR(255) DEFAULT 'Productivity enthusiast and UI/UX designer.',
                 username VARCHAR(255) NOT NULL,
                 email VARCHAR(255) UNIQUE NOT NULL,
                 phone VARCHAR(20) UNIQUE NOT NULL,
@@ -40,13 +45,19 @@ def create_tables():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id VARCHAR(255) NOT NULL,
+                user_id VARCHAR(255),
                 title VARCHAR(255) NOT NULL,
                 description TEXT,
+                Category VARCHAR(255),
                 date VARCHAR(255) NOT NULL,
                 time VARCHAR(50),
-                done BOOLEAN NOT NULL,
+                done BOOLEAN DEFAULT FALSE,
                 reminder_setting VARCHAR(50),
+                reminder_datetime VARCHAR(255),
+                reminde1 BOOLEAN,
+                reminde2 BOOLEAN,
+                reminde3 BOOLEAN,
+                reminde4 BOOLEAN,
                 FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
